@@ -166,3 +166,134 @@
   const v=document.querySelector('.version');if(v)v.textContent='2D ACTION RPG · PLAYTEST v16.9.1';
   window.__forgottenForestLive={gameVersion:'16.8',patchVersion:version,status:'ready',motionLab:true};
 })();
+
+/* Cha Segye four-direction master art v17.0 (first-pass base key art).
+   Changes only the sprite artwork, not existing combat timings or input. */
+(() => {
+  'use strict';
+  const W=120,H=150;
+  const facing={down:0,left:1,right:2,up:3};
+  const originalDraw=drawHero;
+  const clamp=x=>Math.max(0,Math.min(1,x));
+  const ease=t=>{t=clamp(t);return t*t*(3-2*t)};
+  let master=null,useNew=true;
+
+  function hairStroke(ctx,pts,tone,width=1){
+    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=tone;ctx.lineWidth=width;
+    ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);
+    ctx.stroke();ctx.restore();
+  }
+  function sculptHair(ctx,dir){
+    ctx.save();
+    const strands=dir===0 ? [
+      [[42,41],[44,34],[49,25],[55,16]],
+      [[47,37],[52,28],[58,20],[65,12]],
+      [[55,34],[61,26],[68,18],[75,13]],
+      [[64,33],[70,27],[78,20],[85,16]],
+      [[72,36],[77,30],[85,23]]
+    ] : dir===1 ? [
+      [[52,38],[47,30],[40,23],[35,16]],
+      [[47,36],[43,28],[36,20]],
+      [[44,33],[40,27],[34,23]],
+      [[40,30],[36,26],[29,20]]
+    ] : dir===2 ? [
+      [[68,38],[73,31],[80,23],[85,17]],
+      [[72,35],[77,27],[84,20]],
+      [[77,32],[82,27],[89,23]],
+      [[80,30],[86,23],[92,19]]
+    ] : [
+      [[40,20],[48,17],[55,24],[58,38]],
+      [[48,15],[55,18],[62,27],[65,40]],
+      [[55,13],[64,18],[70,30],[70,42]],
+      [[70,15],[72,23],[76,34],[75,43]],
+      [[81,21],[78,29],[79,39]]
+    ];
+    strands.forEach((points,i)=>{
+      hairStroke(ctx,points,'rgba(159,158,180,'+(.17+(i%3)*.025)+')',1.25);
+      if(i%2===0)hairStroke(ctx,points.slice(0,3),'rgba(187,186,204,.09)',.55);
+    });
+    if(dir===0){
+      let skin=ctx.createLinearGradient(47,37,54,47);
+      skin.addColorStop(0,'rgba(245,199,187,.14)');
+      skin.addColorStop(1,'rgba(255,214,198,.64)');
+      ctx.fillStyle=skin;ctx.beginPath();ctx.moveTo(49,42);ctx.lineTo(52,38);ctx.lineTo(55,39);
+      ctx.lineTo(55,45);ctx.lineTo(51,46);ctx.closePath();ctx.fill();
+      hairStroke(ctx,[[45,40],[48,36],[52,34],[57,34]],'rgba(28,25,32,.9)',1.3);
+    }else if(dir===1){
+      hairStroke(ctx,[[50,38],[47,35],[42,33],[38,35]],'rgba(25,24,31,.9)',1.3);
+    }else if(dir===2){
+      hairStroke(ctx,[[70,37],[73,34],[78,32],[82,35]],'rgba(25,24,31,.9)',1.3);
+    }
+    ctx.restore();
+  }
+  function createMaster(src){
+    const c=document.createElement('canvas');c.width=W*4;c.height=H;
+    const ctx=c.getContext('2d');
+    for(let row=0;row<4;row++){
+      ctx.drawImage(src,0,row*H,W,H,row*W,0,W,H);
+      ctx.save();ctx.translate(row*W,0);sculptHair(ctx,row);ctx.restore();
+    }
+    master=c;
+    window.__FFHeroBaseV170={version:'17.0',ready:true,master:c,showNew:()=>useNew};
+  }
+  function discoverSource(){
+    const candidate=window.__heroArtV164;
+    if(candidate?.complete&&candidate.naturalWidth===5040){createMaster(candidate);return true;}
+    const native=g.drawImage;let caught=null;
+    try{
+      g.drawImage=function(...args){
+        const image=args[0];
+        if(image&&image.naturalWidth>=4080&&image.naturalHeight===600&&args.length===9&&args[3]===W&&args[4]===H)caught=image;
+        return native.apply(this,args);
+      };
+      originalDraw();
+    } finally {g.drawImage=native;}
+    if(caught){createMaster(caught);return true;}
+    return false;
+  }
+  function typeNow(){return player.atk>0?'attack':player.skill>0?'magic':player.moving?(player.run?'run':'walk'):'idle'}
+  function renderHeroBase(){
+    if(!useNew)return originalDraw();
+    if(!master){if(!discoverSource())return originalDraw();}
+    const face=(player.atk>0||player.skill>0)?(player.attackFace||player.face):player.face;
+    const row=facing[face]??0;
+    const px=Math.round(player.x-camX),py=Math.round(player.y-camY);
+    const motion=typeNow();
+    if(motion==='idle'){
+      g.save();g.globalAlpha=.19;g.fillStyle='#0c1c23';g.beginPath();g.ellipse(px,py+3,23,6,0,0,Math.PI*2);g.fill();
+      g.globalAlpha=1;g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+      g.drawImage(master,row*W,0,W,H,px-60,py-145,W,H);g.restore();
+      return;
+    }
+    originalDraw();
+    let x=0,y=0,rot=0;
+    if(motion==='attack'){
+      const t=clamp(1-player.atk/(player.atkDuration168||.54));
+      const wind=ease(t/.26),cut=ease((t-.26)/.32),recover=ease((t-.67)/.33);
+      const sign=face==='left'?-1:face==='right'?1:0;
+      const yaw=-.10*wind+.26*cut-.16*recover;
+      x=sign*(-4*wind+12*cut-8*recover);y=2*wind-4*cut+2*recover;rot=sign*yaw+(sign===0?yaw*.3:0);
+    }else if(motion==='magic'){
+      const t=clamp(1-player.skill/(player.magicDuration168||.72));
+      const sign=face==='left'?-1:face==='right'?1:0;
+      x=sign*3*ease(t);y=-2*ease(t);
+    }
+    g.save();g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+    g.translate(px+x,py-49+y);g.rotate(rot);g.translate(0,49);
+    g.drawImage(master,row*W,0,W,69,-60,-145,W,69);
+    g.restore();
+  }
+  drawHero=renderHeroBase;drawHeroV10=renderHeroBase;
+  const lab=document.querySelector('.ff-motion-lab .ff-motion-buttons');
+  if(lab){
+    const label=document.createElement('label');label.className='ff-motion-slow';
+    label.style.marginLeft='auto';label.innerHTML='<input type="checkbox" checked> 새 차세계 원화';
+    lab.appendChild(label);
+    label.querySelector('input').addEventListener('change',e=>{useNew=e.target.checked});
+  }
+  const version=document.querySelector('.version');
+  if(version)version.textContent='2D ACTION RPG · 차세계 기본 원화 v17.0';
+  window.__FFHeroBaseV170={version:'17.0',ready:false,showNew:()=>useNew};
+  window.__forgottenForestLive={gameVersion:'16.8',patchVersion:'17.0-base',status:'ready',motionLab:true};
+})();
